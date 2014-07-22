@@ -1,7 +1,9 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.ComponentModel.DataAnnotations;
 using System.Linq;
 using System.Reflection;
+using System.Runtime.CompilerServices;
 
 namespace RasDialNet
 {
@@ -14,6 +16,7 @@ namespace RasDialNet
 
             var argList = BuildArgList(args).ToList();
             var properties = options.GetType().GetProperties(BindingFlags.Public | BindingFlags.Instance).ToList();
+            var usedProperties = new List<PropertyInfo>();
 
             var argsWithoutKeys = new List<Argument>();
 
@@ -22,9 +25,24 @@ namespace RasDialNet
             {
                 if (argument.HasKey)
                 {
-                    var property = properties.SingleOrDefault(x => x.Name.StartsWith(argument.Key, StringComparison.InvariantCultureIgnoreCase));
+                    var matchingProperties =
+                        properties.Where(x => x.Name.StartsWith(argument.Key, StringComparison.InvariantCultureIgnoreCase))
+                                  .ToList();
+
+                    if (matchingProperties.Count == 0)
+                    {
+                        throw new ArgumentException(string.Format("Unrecognised argument: {0}", argument.Key));
+                    }
+
+                    if (matchingProperties.Count > 1)
+                    {
+                        throw new ArgumentException(string.Format("Multiple arguments matched with {0}. Consider adding more of the argument name so that it matches just one argument.", argument.Key));
+                    }
+
+                    var property = matchingProperties.Single();
+
                     SetPropertyValue(options, property, argument.Value);
-                    properties.Remove(property);
+                    usedProperties.Add(property);
                 }
                 else
                 {
@@ -41,6 +59,15 @@ namespace RasDialNet
                 }
 
                 SetPropertyValue(options, properties[i], argsWithoutKeys[i].Value);
+                usedProperties.Add(properties[i]);
+            }
+
+            foreach (var property in properties.Except(usedProperties))
+            {
+                if (HasRequiredAttribute(property))
+                {
+                    throw new ArgumentException(string.Format("Value for required argument {0} has not been supplied.", property.Name));
+                }
             }
 
             return options;
@@ -66,11 +93,10 @@ namespace RasDialNet
             property.SetValue(options, typedArg);
         }
 
-        private ArgumentAttribute GetArgAttribute(PropertyInfo propertyInfo)
+        private static bool HasRequiredAttribute(PropertyInfo propertyInfo)
         {
-            return propertyInfo.GetCustomAttributes(typeof(ArgumentAttribute))
-                               .Cast<ArgumentAttribute>()
-                               .SingleOrDefault();
+            return propertyInfo.GetCustomAttributes(typeof(RequiredAttribute))
+                               .Any();
         }
 
         private static IEnumerable<Argument> BuildArgList(IEnumerable<string> args)
