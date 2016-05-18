@@ -27,7 +27,6 @@ namespace RasDialNet
                 if (command == null) throw new ArgumentNullException("command");
                 command.Execute();
                 logger.Info(() => "Completed, closing...");
-                Thread.Sleep(2000);
             }
             catch (Exception e)
             {
